@@ -17,6 +17,10 @@ module CarrierWave
         end
 
         def original_filename
+          if file.meta.include? 'content-disposition'
+            match = file.meta['content-disposition'].match(/filename=(\"?)(.+)\1/)
+            return match[2] unless match.nil?
+          end
           File.basename(file.base_uri.path)
         end
 
@@ -70,7 +74,13 @@ module CarrierWave
       # [url (String)] The URL where the remote file is stored
       #
       def process_uri(uri)
-        URI.parse(URI.escape(URI.unescape(uri)))
+        URI.parse(uri)
+      rescue URI::InvalidURIError
+        uri_parts = uri.split('?')
+        # regexp from Ruby's URI::Parser#regexp[:UNSAFE], with [] specifically removed
+        encoded_uri = URI.encode(uri_parts.shift, /[^\-_.!~*'()a-zA-Z\d;\/?:@&=+$,]/)
+        encoded_uri << '?' << URI.encode(uri_parts.join('?')) if uri_parts.any?
+        URI.parse(encoded_uri) rescue raise CarrierWave::DownloadError, "couldn't parse URL"
       end
 
     end # Download

@@ -19,6 +19,7 @@ module CarrierWave
     # [:fog_public]                       (optional) public readability, defaults to true
     # [:fog_authenticated_url_expiration] (optional) time (in seconds) that authenticated urls
     #   will be valid, when fog_public is false and provider is AWS or Google, defaults to 600
+    # [:fog_use_ssl_for_aws]              (optional) #public_url will use https for the AWS generated URL]
     #
     #
     # AWS credentials contain the following keys:
@@ -103,6 +104,7 @@ module CarrierWave
       end
 
       class File
+        include CarrierWave::Utilities::Uri
 
         ##
         # Current local path to file
@@ -135,13 +137,13 @@ module CarrierWave
         # [NilClass] no authenticated url available
         #
         def authenticated_url(options = {})
-          if ['AWS', 'Google', 'Rackspace'].include?(@uploader.fog_credentials[:provider])
+          if ['AWS', 'Google', 'Rackspace', 'Openstack'].include?(@uploader.fog_credentials[:provider])
             # avoid a get by using local references
             local_directory = connection.directories.new(:key => @uploader.fog_directory)
             local_file = local_directory.files.new(:key => path)
             if @uploader.fog_credentials[:provider] == "AWS"
               local_file.url(::Fog::Time.now + @uploader.fog_authenticated_url_expiration, options)
-            elsif @uploader.fog_credentials[:provider] == "Rackspace"
+            elsif ['Rackspace', 'Openstack'].include?(@uploader.fog_credentials[:provider])
               connection.get_object_https_url(@uploader.fog_directory, path, ::Fog::Time.now + @uploader.fog_authenticated_url_expiration)
             else
               local_file.url(::Fog::Time.now + @uploader.fog_authenticated_url_expiration)
@@ -275,11 +277,12 @@ module CarrierWave
         # [NilClass] no public url available
         #
         def public_url
+          encoded_path = encode_path(path)
           if host = @uploader.asset_host
             if host.respond_to? :call
-              "#{host.call(self)}/#{path}"
+              "#{host.call(self)}/#{encoded_path}"
             else
-              "#{host}/#{path}"
+              "#{host}/#{encoded_path}"
             end
           else
             # AWS/Google optimized for speed over correctness
@@ -287,18 +290,19 @@ module CarrierWave
             when 'AWS'
               # check if some endpoint is set in fog_credentials
               if @uploader.fog_credentials.has_key?(:endpoint)
-                "#{@uploader.fog_credentials[:endpoint]}/#{@uploader.fog_directory}/#{path}"
+                "#{@uploader.fog_credentials[:endpoint]}/#{@uploader.fog_directory}/#{encoded_path}"
               else
+                protocol = @uploader.fog_use_ssl_for_aws ? "https" : "http"
                 # if directory is a valid subdomain, use that style for access
                 if @uploader.fog_directory.to_s =~ /^(?:[a-z]|\d(?!\d{0,2}(?:\d{1,3}){3}$))(?:[a-z0-9\.]|(?![\-])|\-(?![\.])){1,61}[a-z0-9]$/
-                  "https://#{@uploader.fog_directory}.s3.amazonaws.com/#{path}"
+                  "#{protocol}://#{@uploader.fog_directory}.s3.amazonaws.com/#{encoded_path}"
                 else
                   # directory is not a valid subdomain, so use path style for access
-                  "https://s3.amazonaws.com/#{@uploader.fog_directory}/#{path}"
+                  "#{protocol}://s3.amazonaws.com/#{@uploader.fog_directory}/#{encoded_path}"
                 end
               end
             when 'Google'
-              "https://commondatastorage.googleapis.com/#{@uploader.fog_directory}/#{path}"
+              "https://commondatastorage.googleapis.com/#{@uploader.fog_directory}/#{encoded_path}"
             else
               # avoid a get by just using local reference
               directory.files.new(:key => path).public_url
@@ -334,7 +338,7 @@ module CarrierWave
         #
         def filename(options = {})
           if file_url = url(options)
-            file_url.gsub(/.*\/(.*?$)/, '\1')
+            URI.decode(file_url).gsub(/.*\/(.*?$)/, '\1').split('?').first
           end
         end
 

@@ -20,15 +20,11 @@ module CarrierWave
     # [Hash{Symbol => CarrierWave}] what uploaders are mounted on which columns
     #
     def uploaders
-      @uploaders ||= {}
-      @uploaders = superclass.uploaders.merge(@uploaders) if superclass.respond_to?(:uploaders)
-      @uploaders
+      @uploaders ||= superclass.respond_to?(:uploaders) ? superclass.uploaders.dup : {}
     end
 
     def uploader_options
-      @uploader_options ||= {}
-      @uploader_options = superclass.uploader_options.merge(@uploader_options) if superclass.respond_to?(:uploader_options)
-      @uploader_options
+      @uploader_options ||= superclass.respond_to?(:uploader_options) ? superclass.uploader_options.dup : {}
     end
 
     ##
@@ -62,7 +58,7 @@ module CarrierWave
     #
     #     @user.image.url # => '/some_url.png'
     #
-    # It is also possible (but not recommended) to ommit the uploader, which
+    # It is also possible (but not recommended) to omit the uploader, which
     # will create an anonymous uploader class.
     #
     # Passing a block makes it possible to customize the uploader. This can be
