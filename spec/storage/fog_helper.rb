@@ -7,10 +7,11 @@ def fog_tests(fog_credentials)
         before do
           CarrierWave.configure do |config|
             config.reset_config
-            config.fog_attributes  = {}
-            config.fog_credentials = fog_credentials
-            config.fog_directory   = CARRIERWAVE_DIRECTORY
-            config.fog_public      = true
+            config.fog_attributes      = {}
+            config.fog_credentials     = fog_credentials
+            config.fog_directory       = CARRIERWAVE_DIRECTORY
+            config.fog_public          = true
+            config.fog_use_ssl_for_aws = true
           end
 
           eval <<-RUBY
@@ -39,21 +40,21 @@ end
 
         describe '#store!' do
           before do
-            @uploader.stub!(:store_path).and_return('uploads/test.jpg')
+            @uploader.stub!(:store_path).and_return('uploads/test+.jpg')
             @fog_file = @storage.store!(@file)
           end
 
           it "should upload the file" do
-            @directory.files.get('uploads/test.jpg').body.should == 'this is stuff'
+            @directory.files.get('uploads/test+.jpg').body.should == 'this is stuff'
           end
 
           it "should have a path" do
-            @fog_file.path.should == 'uploads/test.jpg'
+            @fog_file.path.should == 'uploads/test+.jpg'
           end
 
           it "should have a content_type" do
             @fog_file.content_type.should == 'image/jpeg'
-            @directory.files.get('uploads/test.jpg').content_type.should == 'image/jpeg'
+            @directory.files.get('uploads/test+.jpg').content_type.should == 'image/jpeg'
           end
 
           it "should have an extension" do
@@ -86,6 +87,19 @@ end
                 @fog_file.public_url.should include('https://s3.amazonaws.com/SiteAssets')
               end
             end
+
+            it "should use https as a default protocol" do
+              if @provider == 'AWS'
+                @fog_file.public_url.should start_with 'https://'
+              end
+            end
+
+            it "should use https as a default protocol" do
+              if @provider == 'AWS'
+                @uploader.stub(:fog_use_ssl_for_aws).and_return(false)
+                @fog_file.public_url.should start_with 'http://'
+              end
+            end
           end
 
           context "with asset_host" do
@@ -104,20 +118,20 @@ end
               end
 
               it "should have a asset_host rooted public_url" do
-                @fog_file.public_url.should == 'http://foo.bar/uploads/test.jpg'
+                @fog_file.public_url.should == 'http://foo.bar/uploads/test%2B.jpg'
               end
 
               it "should have a asset_host rooted url" do
-                @fog_file.url.should == 'http://foo.bar/uploads/test.jpg'
+                @fog_file.url.should == 'http://foo.bar/uploads/test%2B.jpg'
               end
 
               it "should always have the same asset_host rooted url" do
-                @fog_file.url.should == 'http://foo.bar/uploads/test.jpg'
-                @fog_file.url.should == 'http://foo.bar/uploads/test.jpg'
+                @fog_file.url.should == 'http://foo.bar/uploads/test%2B.jpg'
+                @fog_file.url.should == 'http://foo.bar/uploads/test%2B.jpg'
               end
 
               it 'should retrieve file name' do
-                @fog_file.filename.should == 'test.jpg'
+                @fog_file.filename.should == 'test+.jpg'
               end
             end
 
@@ -125,16 +139,16 @@ end
               let(:asset_host) { "http://foo.bar" }
 
               it "should have a asset_host rooted public_url" do
-                @fog_file.public_url.should == 'http://foo.bar/uploads/test.jpg'
+                @fog_file.public_url.should == 'http://foo.bar/uploads/test%2B.jpg'
               end
 
               it "should have a asset_host rooted url" do
-                @fog_file.url.should == 'http://foo.bar/uploads/test.jpg'
+                @fog_file.url.should == 'http://foo.bar/uploads/test%2B.jpg'
               end
 
               it "should always have the same asset_host rooted url" do
-                @fog_file.url.should == 'http://foo.bar/uploads/test.jpg'
-                @fog_file.url.should == 'http://foo.bar/uploads/test.jpg'
+                @fog_file.url.should == 'http://foo.bar/uploads/test%2B.jpg'
+                @fog_file.url.should == 'http://foo.bar/uploads/test%2B.jpg'
               end
             end
           end
@@ -145,7 +159,7 @@ end
 
           it "should be deletable" do
             @fog_file.delete
-            @directory.files.head('uploads/test.jpg').should == nil
+            @directory.files.head('uploads/test+.jpg').should == nil
           end
         end
 
@@ -219,9 +233,13 @@ end
             end
 
             it "should have an authenticated_url" do
-              if ['AWS', 'Rackspace', 'Google'].include?(@provider)
+              if ['AWS', 'Rackspace', 'Google', 'Openstack'].include?(@provider)
                 @fog_file.authenticated_url.should_not be_nil
               end
+            end
+
+            it 'should generate correct filename' do
+              @fog_file.filename.should == 'private.txt'
             end
 
             it "should handle query params" do

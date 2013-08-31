@@ -28,6 +28,7 @@ module CarrierWave
         add_config :fog_directory
         add_config :fog_public
         add_config :fog_authenticated_url_expiration
+        add_config :fog_use_ssl_for_aws
 
         # Mounting
         add_config :ignore_integrity_errors
@@ -77,8 +78,14 @@ module CarrierWave
 
         def add_config(name)
           class_eval <<-RUBY, __FILE__, __LINE__ + 1
+            def self.eager_load_fog(fog_credentials)
+              # see #1198. This will hopefully no longer be necessary after fog 2.0
+              Fog::Storage.new(fog_credentials) if fog_credentials.present?
+            end
+
             def self.#{name}(value=nil)
               @#{name} = value if value
+              eager_load_fog(value) if value && '#{name}' == 'fog_credentials'
               return @#{name} if self.object_id == #{self.object_id} || defined?(@#{name})
               name = superclass.#{name}
               return nil if name.nil? && !instance_variable_defined?("@#{name}")
@@ -86,17 +93,23 @@ module CarrierWave
             end
 
             def self.#{name}=(value)
+              eager_load_fog(value) if '#{name}' == 'fog_credentials'
               @#{name} = value
             end
 
             def #{name}=(value)
+              self.class.eager_load_fog(value) if '#{name}' == 'fog_credentials'
               @#{name} = value
             end
 
             def #{name}
               value = @#{name} if instance_variable_defined?(:@#{name})
               value = self.class.#{name} unless instance_variable_defined?(:@#{name})
-              value.instance_of?(Proc) ? value.call : value
+              if value.instance_of?(Proc)
+                value.arity >= 1 ? value.call(self) : value.call
+              else 
+                value
+              end
             end
           RUBY
         end
@@ -121,6 +134,7 @@ module CarrierWave
             config.fog_credentials = {}
             config.fog_public = true
             config.fog_authenticated_url_expiration = 600
+            config.fog_use_ssl_for_aws = true
             config.store_dir = 'uploads'
             config.cache_dir = 'uploads/tmp'
             config.delete_tmp_file_after_storage = true

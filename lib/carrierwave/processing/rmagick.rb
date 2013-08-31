@@ -116,6 +116,7 @@ module CarrierWave
     #
     def convert(format)
       manipulate!(:format => format)
+      @format = format
     end
 
     ##
@@ -214,7 +215,7 @@ module CarrierWave
     def resize_and_pad(width, height, background=:transparent, gravity=::Magick::CenterGravity)
       manipulate! do |img|
         img.resize_to_fit!(width, height)
-        new_img = ::Magick::Image.new(width, height)
+        new_img = ::Magick::Image.new(width, height) { self.background_color = background == :transparent ? 'rgba(255,255,255,0)' : background.to_s }
         if background == :transparent
           filled = new_img.matte_floodfill(1, 1)
         else
@@ -333,14 +334,14 @@ module CarrierWave
       end
 
       write_block = create_info_block(options[:write])
-      if options[:format]
-        frames.write("#{options[:format]}:#{current_path}", &write_block)
+      if options[:format] || @format
+        frames.write("#{options[:format] || @format}:#{current_path}", &write_block)
       else
         frames.write(current_path, &write_block)
       end
       destroy_image(frames)
     rescue ::Magick::ImageMagickError => e
-      raise CarrierWave::ProcessingError, I18n.translate(:"errors.messages.rmagick_processing_error", :e => e)
+      raise CarrierWave::ProcessingError, I18n.translate(:"errors.messages.rmagick_processing_error", :e => e, :default => I18n.translate(:"errors.messages.rmagick_processing_error", :e => e, :locale => :en))
     end
 
   private

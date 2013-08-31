@@ -1,19 +1,7 @@
 # encoding: utf-8
 
 require 'spec_helper'
-
-require 'carrierwave/orm/activerecord'
-
-# Change this if MySQL is unavailable
-dbconfig = {
-  :adapter  => 'mysql2',
-  :database => 'carrierwave_test',
-  :username => 'root',
-  :encoding => 'utf8'
-}
-
-ActiveRecord::Base.establish_connection(dbconfig)
-ActiveRecord::Migration.verbose = false
+require 'support/activerecord'
 
 class TestMigration < ActiveRecord::Migration
   def self.up
@@ -41,6 +29,9 @@ describe CarrierWave::ActiveRecord do
     after { Event.delete_all }
 
     before do
+      # Rails 4 defaults to no root in JSON, join the party
+      ActiveRecord::Base.include_root_in_json = false
+
       # My god, what a horrible, horrible solution, but AR validations don't work
       # unless the class has a name. This is the best I could come up with :S
       $arclass += 1
@@ -83,7 +74,7 @@ describe CarrierWave::ActiveRecord do
 
       it "should return valid JSON when to_json is called when image is nil" do
         expect(@event[:image]).to be_nil
-        hash = JSON.parse(@event.to_json)["event#{$arclass}"]
+        hash = JSON.parse(@event.to_json)
         expect(hash.keys).to include("image")
         expect(hash["image"].keys).to include("url")
         expect(hash["image"]["url"]).to be_nil
@@ -94,7 +85,7 @@ describe CarrierWave::ActiveRecord do
         @event.save!
         @event.reload
 
-        expect(JSON.parse(@event.to_json)["event#{$arclass}"]["image"]).to eq({"url" => "/uploads/test.jpeg"})
+        expect(JSON.parse(@event.to_json)["image"]).to eq({"url" => "/uploads/test.jpeg"})
       end
 
       it "should return valid JSON when to_json is called on a collection containing uploader from a model" do
@@ -126,7 +117,7 @@ describe CarrierWave::ActiveRecord do
         @event.save!
         @event.reload
 
-        expect(@event.as_json(:only => [:foo])["event#{$arclass}"]).to eq({"foo" => nil})
+        expect(@event.as_json(:only => [:foo])).to eq({"foo" => nil})
       end
 
       it "should respect options[:except] when passed to as_json for the serializable hash" do
@@ -134,7 +125,38 @@ describe CarrierWave::ActiveRecord do
         @event.save!
         @event.reload
 
-        expect(@event.as_json(:except => [:id, :image, :foo])["event#{$arclass}"]).to eq({"textfile" => nil})
+        expect(@event.as_json(:except => [:id, :image, :foo])).to eq({"textfile" => nil})
+      end
+      it "should respect both options[:only] and options[:except] when passed to as_json for the serializable hash" do
+        @event[:image] = 'test.jpeg'
+        @event.save!
+        @event.reload
+
+        expect(@event.as_json(:only => [:foo], :except => [:id])).to eq({"foo" => nil})
+      end
+
+      it "should respect options[:only] when passed to to_xml for the serializable hash" do
+        @event[:image] = 'test.jpeg'
+        @event.save!
+        @event.reload
+
+        expect(Hash.from_xml(@event.to_xml(:only => [:foo]))["event#{$arclass}"]["image"]).to be_nil
+      end
+
+      it "should respect options[:except] when passed to to_xml for the serializable hash" do
+        @event[:image] = 'test.jpeg'
+        @event.save!
+        @event.reload
+
+        expect(Hash.from_xml(@event.to_xml(:except => [:image]))["event#{$arclass}"]["image"]).to be_nil
+      end
+
+      it "should respect both options[:only] and options[:except] when passed to to_xml for the serializable hash" do
+        @event[:image] = 'test.jpeg'
+        @event.save!
+        @event.reload
+
+        expect(Hash.from_xml(@event.to_xml(:only => [:foo], :except => [:id]))["event#{$arclass}"]["image"]).to be_nil
       end
     end
 
@@ -439,8 +461,8 @@ describe CarrierWave::ActiveRecord do
 
         it "should have JSON for each uploader" do
           parsed = JSON.parse(@event.to_json)
-          expect(parsed["event#{$arclass}"]["image"]["url"]).to match(/old\.jpeg$/)
-          expect(parsed["event#{$arclass}"]["textfile"]["url"]).to match(/old\.txt$/)
+          expect(parsed["image"]["url"]).to match(/old\.jpeg$/)
+          expect(parsed["textfile"]["url"]).to match(/old\.txt$/)
         end
       end
     end
